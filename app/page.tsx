@@ -1,119 +1,125 @@
 "use client";
-import React, { useState, useEffect } from 'react';
-import { Droplets, Plus, RotateCcw, Settings, Trophy } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Droplets, Plus, RotateCcw, Settings, Camera, Loader2, X } from 'lucide-react';
+
+const DRINK_TYPES = {
+  water: { label: '纯水', factor: 1.0, icon: '💧' },
+  tea: { label: '茶', factor: 0.9, icon: '🍃' },
+  coffee: { label: '咖啡', factor: 0.8, icon: '☕' },
+  soda: { label: '甜饮', factor: 0.7, icon: '🥤' }
+};
 
 export default function HeLeMeApp() {
   const [waterAmount, setWaterAmount] = useState(0);
-  const [goal, setGoal] = useState(2000); // 默认目标 2000ml
-  const [weight, setWeight] = useState(60);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [showManual, setShowManual] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // 初始化加载数据
+  // 初始化加载
   useEffect(() => {
     const saved = localStorage.getItem('water_today');
-    if (saved) setWaterAmount(parseInt(saved));
-    const savedWeight = localStorage.getItem('user_weight');
-    if (savedWeight) {
-      const w = parseInt(savedWeight);
-      setWeight(w);
-      setGoal(w * 35); // 自动计算目标：体重 * 35ml
-    }
+    if (saved) setWaterAmount(parseFloat(saved));
   }, []);
 
-  // 持久化存储
   useEffect(() => {
     localStorage.setItem('water_today', waterAmount.toString());
   }, [waterAmount]);
 
-  const progress = Math.min((waterAmount / goal) * 100, 100);
+  // 1. 拍照/上传逻辑
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
 
-  const addWater = (amount: number) => {
-    setWaterAmount(prev => prev + amount);
+    setIsAnalyzing(true);
+    const reader = new FileReader();
+    reader.onloadend = async () => {
+      const base64 = reader.result as string;
+      try {
+        const res = await fetch('/api/identify', {
+          method: 'POST',
+          body: JSON.stringify({ image: base64 }),
+        });
+        const data = await res.json();
+        if (data.type) {
+          const added = data.amount * data.factor;
+          setWaterAmount(prev => prev + added);
+          alert(`识别成功！这是【${data.type}】，含糖量【${data.sugar}】，为您计入 ${added.toFixed(0)}ml 水分。`);
+        }
+      } catch (err) {
+        alert("AI 暂时开小差了，请重试");
+      } finally {
+        setIsAnalyzing(false);
+      }
+    };
+    reader.readAsDataURL(file);
   };
 
-  const resetWater = () => {
-    if (confirm("确定要重置今日进度吗？")) setWaterAmount(0);
+  // 2. 手动计入逻辑
+  const addWater = (ml: number, factor: number) => {
+    setWaterAmount(prev => prev + (ml * factor));
+    setShowManual(false);
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col items-center p-4 text-slate-800">
-      {/* Header */}
+    <div className="min-h-screen bg-sky-50 flex flex-col items-center p-4">
       <header className="w-full max-w-md flex justify-between items-center mb-8">
         <h1 className="text-2xl font-bold text-blue-600 flex items-center gap-2">
-          <Droplets className="fill-blue-500" /> 喝了么
+          <Droplets className="fill-blue-500" /> 喝了么 2.0
         </h1>
-        <button onClick={() => {
-          const w = prompt("请输入你的体重 (kg):", weight.toString());
-          if (w) {
-            localStorage.setItem('user_weight', w);
-            setWeight(parseInt(w));
-            setGoal(parseInt(w) * 35);
-          }
-        }} className="p-2 bg-white rounded-full shadow-sm">
-          <Settings size={20} />
-        </button>
+        <button onClick={() => setWaterAmount(0)} className="p-2 text-slate-400 hover:text-red-500"><RotateCcw size={20} /></button>
       </header>
 
-      {/* Main Progress Circle */}
-      <div className="relative w-64 h-64 flex items-center justify-center mb-10">
-        <svg className="w-full h-full transform -rotate-90">
-          <circle
-            cx="128" cy="128" r="120"
-            stroke="currentColor" strokeWidth="12"
-            fill="transparent" className="text-blue-100"
-          />
-          <circle
-            cx="128" cy="128" r="120"
-            stroke="currentColor" strokeWidth="12"
-            fill="transparent"
-            strokeDasharray={2 * Math.PI * 120}
-            strokeDashoffset={2 * Math.PI * 120 * (1 - progress / 100)}
-            className="text-blue-500 transition-all duration-1000 ease-out"
-            strokeLinecap="round"
-          />
-        </svg>
-        <div className="absolute flex flex-col items-center">
-          <span className="text-4xl font-black text-slate-700">{Math.round(progress)}%</span>
-          <span className="text-slate-400 text-sm">{waterAmount} / {goal} ml</span>
-        </div>
-      </div>
-
-      {/* Stats Card */}
-      <div className="w-full max-w-md bg-white rounded-3xl p-6 shadow-xl shadow-blue-100 mb-8 flex justify-around">
+      {/* 核心环形进度 */}
+      <div className="relative w-64 h-64 mb-10 flex items-center justify-center bg-white rounded-full shadow-2xl">
         <div className="text-center">
-          <p className="text-xs text-slate-400 uppercase mb-1">剩余需喝</p>
-          <p className="font-bold text-lg">{Math.max(goal - waterAmount, 0)} ml</p>
-        </div>
-        <div className="border-r border-slate-100"></div>
-        <div className="text-center">
-          <p className="text-xs text-slate-400 uppercase mb-1">健康状态</p>
-          <p className="font-bold text-lg text-green-500">{progress >= 100 ? '达标' : '加油'}</p>
+          <p className="text-4xl font-black text-blue-600">{waterAmount.toFixed(0)}</p>
+          <p className="text-slate-400 text-sm">今日已补水 (ml)</p>
         </div>
       </div>
 
-      {/* Action Buttons */}
-      <div className="w-full max-w-md grid grid-cols-2 gap-4">
-        {[200, 350, 500, 750].map((ml) => (
-          <button
-            key={ml}
-            onClick={() => addWater(ml)}
-            className="bg-white hover:bg-blue-50 border-2 border-transparent hover:border-blue-200 p-4 rounded-2xl shadow-sm flex items-center justify-center gap-2 transition-all active:scale-95"
-          >
-            <Plus size={18} className="text-blue-500" />
-            <span className="font-bold">{ml}ml</span>
-          </button>
-        ))}
-      </div>
+      {/* 拍照按钮 */}
+      <div className="flex gap-4 mb-8">
+        <button
+          onClick={() => fileInputRef.current?.click()}
+          disabled={isAnalyzing}
+          className="flex flex-col items-center gap-2 bg-blue-600 text-white p-6 rounded-3xl shadow-lg active:scale-95 transition-all"
+        >
+          {isAnalyzing ? <Loader2 className="animate-spin" size={32} /> : <Camera size={32} />}
+          <span className="font-bold">{isAnalyzing ? "AI 识别中..." : "拍照识水"}</span>
+        </button>
+        <input type="file" accept="image/*" capture="environment" hidden ref={fileInputRef} onChange={handleImageUpload} />
 
-      {/* Footer Tools */}
-      <div className="mt-auto pt-8 flex gap-6">
-        <button onClick={resetWater} className="flex items-center gap-1 text-slate-400 text-sm hover:text-red-400 transition-colors">
-          <RotateCcw size={14} /> 重置今日记录
+        <button
+          onClick={() => setShowManual(true)}
+          className="flex flex-col items-center gap-2 bg-white text-blue-600 p-6 rounded-3xl shadow-lg active:scale-95 transition-all border-2 border-blue-100"
+        >
+          <Plus size={32} />
+          <span className="font-bold">手动录入</span>
         </button>
       </div>
 
-      {progress >= 100 && (
-        <div className="mt-4 flex items-center gap-2 text-yellow-600 animate-bounce">
-          <Trophy size={20} /> <span className="font-bold">今日目标已达成！</span>
+      {/* 手动输入模态框 */}
+      {showManual && (
+        <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center p-4 z-50">
+          <div className="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl p-6">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-xl font-bold">你想喝点什么？</h2>
+              <button onClick={() => setShowManual(false)}><X /></button>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              {Object.entries(DRINK_TYPES).map(([key, config]) => (
+                <button
+                  key={key}
+                  onClick={() => addWater(250, config.factor)}
+                  className="p-4 border-2 border-slate-50 rounded-2xl hover:border-blue-200 hover:bg-blue-50 transition-all text-left"
+                >
+                  <span className="text-2xl mb-2 block">{config.icon}</span>
+                  <p className="font-bold">{config.label}</p>
+                  <p className="text-xs text-slate-400">250ml / 系数 {config.factor}</p>
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       )}
     </div>
