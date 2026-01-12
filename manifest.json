@@ -1,0 +1,21 @@
+{
+    "name": "喝了么 - 智能饮水助手",
+    "short_name": "喝了么",
+    "description": "基于 AI 的智能水分追踪助手",
+    "start_url": "/",
+    "display": "standalone",
+    "background_color": "#f0f9ff",
+    "theme_color": "#0284c7",
+    "icons": [
+        {
+            "src": "/icon-192.png",
+            "sizes": "192x192",
+            "type": "image/png"
+        },
+        {
+            "src": "/icon-512.png",
+            "sizes": "512x512",
+            "type": "image/png"
+        }
+    ]
+}
